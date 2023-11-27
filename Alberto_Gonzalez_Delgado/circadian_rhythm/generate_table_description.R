@@ -1,3 +1,12 @@
+#!/bin/R
+#Effect of photoperiod on diurnal oscillations of tomato transcriptome
+#Alberto Gonzalez Delgado
+#11/2023
+
+#Centro de Biotecnologia y Genomica de Plantas (CSIC-UPM-INIA)
+
+library(dplyr)
+
 arser_data<-read.table("TFM/02.2.ARSER_parameters.avg_expr.tsv",sep='\t',header=TRUE)
 
 folder <- 'centered_data/peaks'
