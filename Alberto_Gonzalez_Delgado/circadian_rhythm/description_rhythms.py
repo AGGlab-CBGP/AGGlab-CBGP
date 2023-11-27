@@ -23,7 +23,7 @@ def check_arg(args=None):
     Return
         parser.parse_args() # Parsed arguments
     '''
-    parser = argparse.ArgumentParser(prog = 'oscillatory_analysis.py', formatter_class=argparse.RawDescriptionHelpFormatter, description= 'oscillatory_analysis.py analyses the power spectra of the raw data for detecting oscillatory pattern')
+    parser = argparse.ArgumentParser(prog = 'interpolate.py', formatter_class=argparse.RawDescriptionHelpFormatter, description= 'oscillatory_analysis.py analyses the power spectra of the raw data for detecting oscillatory pattern')
     parser.add_argument('--sample','-s',required=True,help='Insert name of the sample (lightconditions_genotype)')
     return parser.parse_args()
 
@@ -61,7 +61,7 @@ class data_set:
                 data frame
         '''
         self.raw=pd.read_csv(f'./exp/{self.condition}.csv',sep=self.sep)
-        return self.raw.iloc[:, 1:]
+        return self.raw
     def read_time_file(self):
         '''
             Description:
@@ -72,7 +72,7 @@ class data_set:
                 data frame
         '''
         self.time=pd.read_csv(f'./time/{self.condition}_time.csv',sep=self.sep)
-        return self.time.iloc[:, 1:]
+        return self.time
     def proc_file(self):
         '''
             Description:
@@ -83,7 +83,7 @@ class data_set:
                 data frame
         '''
         self.proc=pd.read_csv(f'proc_data/{self.condition}.csv',sep=self.sep)
-        return self.proc.iloc[:, 1:]
+        return self.proc
 
     def read_normalized_file(self):
         '''
@@ -95,7 +95,7 @@ class data_set:
                 data frame
         '''
         self.proc=pd.read_csv(f'normalized_expression/{self.condition}_normalized.csv',sep=self.sep)
-        return self.proc.iloc[:, 1:]
+        return self.proc
         
     def preprocess(self,raw,time_file,time_interp,N,width_factor,write=False):
             '''
@@ -106,7 +106,7 @@ class data_set:
                 Return:
                     data frame and csv file (optional)
             '''
-            residuals = pd.DataFrame(columns=['gene', 'centers', 'coef'])
+            residuals = pd.DataFrame(columns=['gene', 'centers', 'coef','residuals'])
             dict_={}
             xfit=time_interp #np.arange(0,24,0.166667)
             gene_list=raw.columns.values
@@ -125,12 +125,20 @@ class data_set:
                 gauss_model.fit(x_array, means)
                 exp_new = gauss_model.predict(xfit[:, np.newaxis])
                 dict_[gene]=exp_new
-                self.preprocessed=pd.DataFrame(dict_)
-                gene=gene
+                time=time_file[gene].values
+                res=0
+                for i, t in enumerate(time):
+                    try:
+                        index = np.where(np.isclose(xfit, t, atol=1e-01))[0][0]
+                    except IndexError:
+                        index = np.where(np.isclose(xfit, t, atol=1))[0][0]
+                    res += means[i] - exp_new[index]
                 centers=gauss_model.steps[0][1].centers_
                 coef=gauss_model.steps[1][1].coef_
-                temp=[gene,pd.Series(centers),pd.Series(coef)]
+                residuals_=res
+                temp=[gene,pd.Series(centers),pd.Series(coef),residuals_]
                 residuals.loc[len(residuals)] = temp
+            self.preprocessed=pd.DataFrame(dict_)
             if write:
                 pd.DataFrame(dict_).to_csv(f'proc_data/{self.condition}.csv')
                 residuals.to_csv(f'proc_data/{self.condition}_residuals.csv')
@@ -180,7 +188,7 @@ class oscillatory_description:
                 data frame 
         ''' 
         self.preliminary_descriptors=pd.read_csv(f'preliminary_peaks/peaks_df_{self.condition}.csv',sep=',')
-        return self.preliminary_descriptors.iloc[:, 1:]
+        return self.preliminary_descriptors
     
     def read_descriptors(self):
         '''
@@ -191,7 +199,7 @@ class oscillatory_description:
             Return:
                 data frame 
         ''' 
-        self.descriptors=pd.read_csv(f'peaks/features_{self.condition}.csv')
+        self.descriptors=pd.read_csv(f'peaks/peaks_{self.condition}.csv')
         return self.descriptors
 
     def finding_peaks(self):
@@ -261,156 +269,146 @@ class oscillatory_description:
                 data frame or output.csv file (optional)
         '''  
         self.preliminary_descriptors=self.read_peliminary_peaks_descriptors()
-        self.exp_normalized=data_set(self.condition,',').read_normalized_file()
-        gene_list=self.exp_normalized.columns.values
-        self.exp_prep=data_set(self.condition,',').proc_file()
+        exp_normalized=data_set(self.condition,',').read_normalized_file()
+        exp_prep=data_set(self.condition,',').proc_file()
         residuals=pd.read_csv(f'./proc_data/{self.condition}_residuals.csv',sep=',')
         phases_a=[];prominences_a=[];plateau_size_a=[];widths_a=[];peaks_count_a=[];gene_a=[];increase_a=[];start_a=[];end_a=[];heights_a=[];auc_a=[];p_value_a=[];phases_a=[];peak_increasing=[];peak_decreasing=[];phase_oscillation_a=[];amplitude_a=[];period_a=[];auc_exp_a=[]
-        centers_a=[];coefs_a=[];skew_a=[];kurt_a=[]
+        centers_a=[];coefs_a=[];skew_a=[];kurt_a=[];res_a=[]
         time=np.arange(1,24,0.16666667)
-        for i in range(len(self.preliminary_descriptors.genes)):
-            gene=self.preliminary_descriptors.genes[i]
-            if self.preliminary_descriptors.genes[i] in gene_list:
-              #Appending features from the other table generatged previously
-    
-              ######################################### 0 peaks #################################################
-    
-              #Eliminating housekeeping genes from the analysis
-              if self.preliminary_descriptors.peaks_count[i]==0:
-                  continue
-              
-              ######################################### >1 peaks #################################################
-              
-              elif self.preliminary_descriptors.peaks_count[i]>0:
-                  #Cleaning input data and extracting peaks and widths. Calculating mean of phase(peaks),widhts,prominences,heights,plateau_size.
-                  peaks=self.preliminary_descriptors.peaks[i].split(" ")
-                  widths=self.preliminary_descriptors.widths[i].split(" ")
-                  prominences=self.preliminary_descriptors.prominences[i].split(" ")
-                  plateau_size=self.preliminary_descriptors.plateau_size[i].split(" ")
-                  height=self.preliminary_descriptors.heights[i].split(" ")
-                  start=self.preliminary_descriptors.time_peak_start[i].split(" ")
-                  final=self.preliminary_descriptors.time_peak_finishes[i].split(" ")
-                  expression=self.exp_normalized[self.preliminary_descriptors.genes[i]]
-                  exp_no_normalized=self.exp_prep[self.preliminary_descriptors.genes[i]]
-                  centers=residuals[residuals['gene']==gene]['centers'].values[0].replace('dtype: float64','').replace('\n','').split()[1:]
-                  centers=list(map(float,centers))
-                  coefs=residuals[residuals['gene']==gene]['coef'].values[0].replace('dtype: float64','').replace('\n','').split()[1:]
-                  coefs=list(map(float,coefs))
-                  peaks_c=[]
-                  for item in peaks:
-                      try:
-                          peaks_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
-                  widths_c=[]
-                  for item in widths:
-                      try:
-                          widths_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+        for i in range(len(self.preliminary_descriptors.genes.values)):
+            gene=self.preliminary_descriptors.genes.values[i]
+            if gene == 'Unnamed: 0.1' or gene == 'Unnamed: 0':
+                continue
+            #Cleaning input data and extracting peaks and widths. Calculating mean of phase(peaks),widhts,prominences,heights,plateau_size.
+            peaks=self.preliminary_descriptors.peaks[i].split(" ")
+            widths=self.preliminary_descriptors.widths[i].split(" ")
+            prominences=self.preliminary_descriptors.prominences[i].split(" ")
+            plateau_size=self.preliminary_descriptors.plateau_size[i].split(" ")
+            height=self.preliminary_descriptors.heights[i].split(" ")
+            start=self.preliminary_descriptors.time_peak_start[i].split(" ")
+            final=self.preliminary_descriptors.time_peak_finishes[i].split(" ")
+            expression=exp_normalized[gene]
+            exp_no_normalized=exp_prep[gene]
+            centers=residuals[residuals['gene']==gene]['centers'].values[0].replace('dtype: float64','').replace('\n','').split()[1:]
+            centers=list(map(float,centers))
+            coefs=residuals[residuals['gene']==gene]['coef'].values[0].replace('dtype: float64','').replace('\n','').split()[1:]
+            coefs=list(map(float,coefs))
+            res=residuals[residuals['gene']==gene]['residuals'].values
+
+            peaks_c=[]
+            for item in peaks:
+                try:
+                    peaks_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
+            widths_c=[]
+            for item in widths:
+                try:
+                    widths_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  prominences_c=[]
-                  for item in prominences:
-                      try:
-                          prominences_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+            prominences_c=[]
+            for item in prominences:
+                try:
+                    prominences_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  plateau_size_c=[]
-                  for item in plateau_size:
-                      try:
-                          plateau_size_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+            plateau_size_c=[]
+            for item in plateau_size:
+                try:
+                    plateau_size_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  height_c=[]
-                  for item in height:
-                      try:
-                          height_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+            height_c=[]
+            for item in height:
+                try:
+                    height_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  start_c=[]
-                  for item in start:
-                      try:
-                          start_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+            start_c=[]
+            for item in start:
+                try:
+                    start_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  final_c=[]
-                  for item in final:
-                      try:
-                          final_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
-                      except:
-                          continue
+            final_c=[]
+            for item in final:
+                try:
+                    final_c.append(float(item.replace("[","").replace("]","").replace(" ","")))
+                except:
+                    continue
                       
-                  peaks_processed=[]
-                  widths_processed=[]
-                  prominences_processed=[]
-                  plateau_size_processed=[]
-                  height_processed=[]
-                  start_processed=[]
-                  final_processed=[]
-                  symmetry=[]
+            peaks_processed=[]
+            widths_processed=[]
+            prominences_processed=[]
+            plateau_size_processed=[]
+            height_processed=[]
+            start_processed=[]
+            final_processed=[]
+            symmetry=[]
                   
-                  highest_prominence=max(prominences_c)
-                  for p in range(0,len(peaks_c)):
-                     if prominences_c[p]==highest_prominence:
-                        if (peaks_c[p]*0.1666666667+1)<24:
-                          peaks_processed.append((peaks_c[p]*0.1666666667)+1)
-                        else:
-                           peaks_processed.append((peaks_c[p]*0.1666666667)-24+1) 
-                        start_processed.append(start_c[p]*0.1666666667+1)
-                        final_processed.append(final_c[p]*0.1666666667+1)
-                        widths_processed.append(widths_c[p]*0.1666666667)
-                        prominences_processed.append(prominences_c[p])
-                        plateau_size_processed.append(plateau_size_c[p])
-                        height_processed.append(height_c[p])
-                        right=round(np.mean(final_c[p]*0.1666666667)-np.mean(peaks_c[p]*0.1666666667),3)
-                        left=round(np.mean(peaks_c[p]*0.1666666667)-np.mean(start_c[p]*0.1666666667),3)
-                        if right>left:
-                        #Faster increase = 0
-                        #Faster decrease = 1                   
-                          symmetry.append(0)
-                        else:
-                          symmetry.append(1)
-                        AUC_shape=np.trapz(expression[int(start_c[p]):int(final_c[p])])
-                        AUC_exp=np.trapz(exp_no_normalized[int(exp_no_normalized[p]):int(final_c[p])])
-                        distribution=[]
-                        for i,t in enumerate(time):
-                            distribution.extend([time[i]]*round(exp_no_normalized[i]*100))
-                        skewness=skew(distribution, bias=True)
-                        krt=kurtosis(distribution,bias=True)
-                  phases=np.mean(peaks_processed)
-                  phases_a.append(round(phases))
-                  peak_increasing.append(left)
-                  peak_decreasing.append(right)
-                  witdths_m=np.mean(widths_processed)
-                  widths_a.append(round(witdths_m,4))
-                  #prominences_m=np.mean(prominences_processed)
-                  #prominences_a.append(round(prominences_m,4))
-                  prominences_a.append(np.mean(prominences_processed))
+            highest_prominence=max(prominences_c)
+            for p in range(0,len(peaks_c)):
+               if prominences_c[p]==highest_prominence:
+                  if (peaks_c[p]*0.1666666667+1)<24:
+                    peaks_processed.append((peaks_c[p]*0.1666666667)+1)
+                  else:
+                     peaks_processed.append((peaks_c[p]*0.1666666667)-24+1) 
+                  start_processed.append(start_c[p]*0.1666666667+1)
+                  final_processed.append(final_c[p]*0.1666666667+1)
+                  widths_processed.append(widths_c[p]*0.1666666667)
+                  prominences_processed.append(prominences_c[p])
+                  plateau_size_processed.append(plateau_size_c[p])
+                  height_processed.append(height_c[p])
+                  right=round(np.mean(final_c[p]*0.1666666667)-np.mean(peaks_c[p]*0.1666666667),3)
+                  left=round(np.mean(peaks_c[p]*0.1666666667)-np.mean(start_c[p]*0.1666666667),3)
+                  if right>left:
+                  #Faster increase = 0
+                  #Faster decrease = 1                   
+                    symmetry.append(0)
+                  else:
+                    symmetry.append(1)
+                  AUC_shape=np.trapz(expression[int(start_c[p]):int(final_c[p])])
+                  AUC_exp=np.trapz(exp_no_normalized[int(exp_no_normalized[p]):int(final_c[p])])
+                  distribution=[]
+                  for i,t in enumerate(time):
+                      distribution.extend([time[i]]*round(exp_no_normalized[i]*100))
+                  skewness=skew(distribution, bias=True)
+                  krt=kurtosis(distribution,bias=True)
+            phases=np.mean(peaks_processed)
+            phases_a.append(round(phases))
+            peak_increasing.append(left)
+            peak_decreasing.append(right)
+            witdths_m=np.mean(widths_processed)
+            widths_a.append(round(witdths_m,4))
+            #prominences_m=np.mean(prominences_processed)
+            #prominences_a.append(round(prominences_m,4))
+            prominences_a.append(np.mean(prominences_processed))
     
-                  plateau_size_m=np.mean(plateau_size_processed)
-                  plateau_size_a.append(round(plateau_size_m,4))
+            plateau_size_m=np.mean(plateau_size_processed)
+            plateau_size_a.append(round(plateau_size_m,4))
     
-                  #heights_m=np.mean(height_processed)    
-                  #heights_a.append(round(heights_m,2))
-                 
-                  gene_a.append(self.preliminary_descriptors.genes[i])
-                  peaks_count_a.append(len(peaks_c))
-                  heights_a.append(np.mean(height_processed))
-                  increase_a.append(round(np.mean(symmetry),3))
-                  start_a.append(np.mean(start_processed))
-                  end_a.append(np.mean(final_processed))
-                  auc_a.append(AUC_shape)
-                  auc_exp_a.append(AUC_exp)
-                  skew_a.append(skewness)
-                  kurt_a.append(krt)
-                  centers_a.append(centers)
-                  coefs_a.append(coefs)
-            else:
-               continue
+            #heights_m=np.mean(height_processed)    
+            #heights_a.append(round(heights_m,2))
+                
+            gene_a.append(gene)
+            peaks_count_a.append(len(peaks_c))
+            heights_a.append(np.mean(height_processed))
+            increase_a.append(round(np.mean(symmetry),3))
+            start_a.append(np.mean(start_processed))
+            end_a.append(np.mean(final_processed))
+            auc_a.append(AUC_shape)
+            auc_exp_a.append(AUC_exp)
+            skew_a.append(skewness)
+            kurt_a.append(krt)
+            centers_a.append(centers)
+            coefs_a.append(coefs)
+            res_a.append(res)
         features={
             'gene' : gene_a,
             'peaks_count' : peaks_count_a,
@@ -426,12 +424,13 @@ class oscillatory_description:
             'coefs' : coefs_a,
             'skewness' : skew_a,
             'kurtosis' : kurt_a,
+            'residuals' : res_a,
             'start' : start_a,
             'end' : end_a
 
         }
         if write:
-            pd.DataFrame(features).to_csv(f'peaks/features_{self.condition}.csv')
+            pd.DataFrame(features).to_csv(f'peaks/peaks_{self.condition}.csv')
         self.descriptors=pd.DataFrame(features)
         return self.descriptors
             
@@ -443,12 +442,19 @@ sample=arguments.sample
 
 #################################################################  Analysis  #########################################################################################
 
+#Read files
 raw_exp = data_set(sample, ',').read_raw_file()
 time_file=data_set(sample,',').read_time_file()
+
+#Process data
 prep_exp = data_set(sample, ',').preprocess(raw_exp, time_file,np.arange(1, 24, 0.1666666667),N=4,width_factor=10, write=True)
 prep=data_set(sample,',').proc_file()
+
+#Normalize data
 normalized=data_set(sample,',').normalize(raw_exp,time_file,read=True,write=True)
 normalized=data_set(sample,',').read_normalized_file()
+
+#Describe circadian rhythms
 preliminary_descriptors=oscillatory_description(sample).calculate_preliminary_descriptors(write=True)
 descriptors=oscillatory_description(sample).calculate_descriptors(write=True)
 
