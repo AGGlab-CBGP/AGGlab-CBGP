@@ -408,7 +408,7 @@ class oscillatory_description:
             kurt_a.append(krt)
             centers_a.append(centers)
             coefs_a.append(coefs)
-            res_a.append(res)
+            res_a.append(float(res))
         features={
             'gene' : gene_a,
             'peaks_count' : peaks_count_a,
