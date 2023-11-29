@@ -1,4 +1,6 @@
-#!bin/R#Alberto Gonzalez Delgado
+#!bin/R
+
+#Alberto Gonzalez Delgado
 #11/2023
 #Centro de Biotecnologia y Genomica de Plantas (UPM-INIA/CSIC)
 
