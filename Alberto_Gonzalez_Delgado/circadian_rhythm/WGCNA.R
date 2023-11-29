@@ -120,7 +120,99 @@ rgl.postscript("3D_PCA.pdf", fmt = "pdf")
 #rownames and column names identical
 colData<-phenoData
 rownames(colData)<-colData$samples
-all(rownames(colData) %in% colnames(data)) #(data.subset)
-colnames(data)
+all(rownames(colData) %in% colnames(data)) #Are all the conditions? #(data.subset)
+all(rownames(colData) == colnames(data)) #They must to be in the same order
+
+# Create dds
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData=colData,
+                              design = ~1) # Not specifying model because we need 
+                                           #the deseq data set to performe variance stabilizing transformation
+
+# Remove all genes with counts >=15 in more than 75% of samples
+#Suggested by WGCNA on RNAseq FAQ
+
+n<-288*0.75
+dds75<-dds[rowSums(counts(dds)>=15)>=n,]
+nrow(dds75) #17711 genes
+
+#Perform variance stabilization
+dds_norm<-vst(dds75)
+
+#Get normalized counts (samples as rows and genes as columns)
+norm.counts<-assay(dds_norm) %>% t()
+
+#4. Network Construction ------------------------
+#Choose a set of soft-thresholding powers
+power<-c(c(1:10),seq(12,50,by=2))
+
+# Call the network topology analysis function
+sft<-pickSoftThreshold(norm.counts,
+                  powerVector = power,
+                  networkType = "signed",
+                  verbose=5)
+
+#Select scaled-free topology
+sft.data<-sft$fitIndices #We want the network with maximun Rsquared and minimum mean conectivity
+
+p1<-ggplot(sft.data,aes(Power,SFT.R.sq,label=Power))+
+  geom_point()+
+  geom_text(nudge_y=0.1)+
+  geom_hline(yintercept = 0.8, color='red')+
+  labs(X='Power',y='Cale free topology model fit, signed R^2')+
+  theme_gray()
+
+p2<-ggplot(sft.data,aes(Power,mean.k., label=Power))+
+  geom_point()+
+  geom_text(nudge_y=0.1)+
+  labs(x="Power",y='Mean Connectivity')+
+  theme_gray()
+
+grid.arrange(p1,p2,ncol=1) #Normally select higher than R2 0.8
+                           #and low mean connectivity
+#Create adjacency matrix
+norm.counts[]<-sapply(norm.counts,as.numeric)
+soft.power<-14 #Theshold selected from previous plot
+temp_cor<-cor #Assign correlation function to a temporal variable so we use WGCNA correlation function
+cor<-WGCNA::cor #Assign correlation function to WGCNA correlation function
+
+#Memory estimate w.r.t blocksize
+bwnet<-blockwiseModules(norm.counts, 
+                 maxBlockSize = 15000, # How many genes include in one block keeping in mind the memory
+                                # the system has access to (most desktop:5000, 4Gb RAM: 8000-10000,
+                                # 16Gb RAM: 20000, 32Gb RAM:30000).
+                  TOMType = "signed",
+                 power=soft.power,
+                 mergeCutHeight=0.25,
+                numericLabels = FALSE,
+                randomSeed = 24,
+                verbose=3)
+cor<-temp_cor
+
+#5. Module Eigengenes ------------------
+
+module_eigengenes<-bwnet$MEs
+head(module_eigengenes)
+
+#Name of each module
+table(bwnet$colors)
+
+
+#Plot dendrogram
+mergedColors = labels2colors(bwnet$colors)
+plotDendroAndColors(bwnet$dendrograms[[1]], mergedColors[bwnet$blockGenes[[1]]], "Module colors", dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05)
+
+unmergedColors=labels2colors(bwnet$unmergedColors)
+plotDendroAndColors(bwnet$dendrograms[[1]], cbind(mergedColors[bwnet$blockGenes[[1]]],unmergedColors[bwnet$blockGenes[[1]]]),
+                    c("unmerged", "merged"),
+                    dendroLabels = FALSE,
+                    addGuide = TRUE,
+                    hang= 0.03,
+                    guideHang = 0.05)
+
+table(unname(bwnet$colors))
+table(unname(bwnet$unmergedColors))#Tutorial: more colors in unmerged, meaning that some clusters were grouped into a single one, so merged will be used
+
+
 
 
