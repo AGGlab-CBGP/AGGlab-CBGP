@@ -1,9 +1,5 @@
 #!/bin/R
 
-#Alberto Gonzalez Delgado
-#11/2023
-#Centro de Biotecnologia y Genomica de Plantas (UPM-INIA/CSIC)
-
 library(WGCNA)
 library(DESeq2)
 library(GEOquery)
@@ -15,19 +11,18 @@ library(rgl)
 allowWGCNAThreads()
 setwd("C:/Users/admin/Desktop/projects")
 
-#1. Read data ---------------------------------------
+#1. Read data
 data<-read.delim("documents/02.1.raw_counts.tsv")
 colnames(data)
 data<-data[,c(1,8:ncol(data))]
 
-#Generate metadata 
+#Generate metadata -----------------------------------
 titles=colnames(data[2:ncol(data)])
 genotypes<-c(rep("EID1",24),rep("LE",24),rep("LNK2",24),rep("MM",24))
 genotypes<-c(rep(genotypes,3))
 photoperiods<-c(rep("LD",96),rep("ND",96),rep("SD",96))
 time<-rep(seq(1, 23, by = 2), each = 2, times = 12)
 replicates<-rep("r1","r2",144)
-
 phenoData<-data.frame(samples=titles,genotype=genotypes,photoperiod=photoperiods,replicate=replicates)
 
 head(data)
@@ -130,7 +125,7 @@ dds <- DESeqDataSetFromMatrix(countData = data,
                               design = ~1) # Not specifying model because we need 
                                            #the deseq data set to performe variance stabilizing transformation
 
-# Remove all genes with counts >=15 in more than 75% of samples
+# Remove all genes with counts >=15 in more than 75% of samples (# samples: 288)
 #Suggested by WGCNA on RNAseq FAQ
 
 n<-288*0.75
@@ -173,7 +168,7 @@ grid.arrange(p1,p2,ncol=1) #Normally select higher than R2 0.8
                            #and low mean connectivity
 #Create adjacency matrix
 norm.counts[]<-sapply(norm.counts,as.numeric)
-soft.power<-14 #Theshold selected from previous plot
+soft.power<-12 #Theshold selected from previous plot
 temp_cor<-cor #Assign correlation function to a temporal variable so we use WGCNA correlation function
 cor<-WGCNA::cor #Assign correlation function to WGCNA correlation function
 
@@ -187,6 +182,7 @@ bwnet<-blockwiseModules(norm.counts,
                  mergeCutHeight=0.25,
                 numericLabels = FALSE,
                 randomSeed = 24,
+                minModuleSize=50, # Minimum number of genes to be considered as cluster (took 30 as reference from https://www.frontiersin.org/articles/10.3389/fpls.2022.864529/full#h7)
                 verbose=3)
 cor<-temp_cor
 
@@ -201,18 +197,85 @@ table(bwnet$colors)
 
 #Plot dendrogram
 mergedColors = labels2colors(bwnet$colors)
+pdf("dendrogram.pdf")
 plotDendroAndColors(bwnet$dendrograms[[1]], mergedColors[bwnet$blockGenes[[1]]], "Module colors", dendroLabels = FALSE, hang = 0.03, addGuide = TRUE, guideHang = 0.05)
-
+dev.off()
 unmergedColors=labels2colors(bwnet$unmergedColors)
+pdf("dendrogram.pdf")
 plotDendroAndColors(bwnet$dendrograms[[1]], cbind(mergedColors[bwnet$blockGenes[[1]]],unmergedColors[bwnet$blockGenes[[1]]]),
                     c("unmerged", "merged"),
                     dendroLabels = FALSE,
                     addGuide = TRUE,
                     hang= 0.03,
                     guideHang = 0.05)
-
+dev.off()
 table(unname(bwnet$colors))
 table(unname(bwnet$unmergedColors))#Tutorial: more colors in unmerged, meaning that some clusters were grouped into a single one, so merged will be used
+
+#6. Relate modules to genes
+#Module trait associations
+
+#Create traits file - binarize categorical variables
+
+#traits<-colData %>% mutate(desired_column_bin = ifelse(grepl('condition',desired_column),1,0)) #In case typical analysis one condition vs other (health vs disease).
+
+#Binarize categorical variables
+colData$photoperiod<-factor(colData$photoperiod,levels=c("ND", "LD", "SD")) #set levels manually
+photoperiod.out <- binarizeCategoricalColumns(colData$photoperiod,minCount=1) #includeLevelvsAll=TRUE --> compare one levels as reference vs others
+
+####I will repeat for genotype althought we only expect groups by photoperiod (for future)
+colData$genotype<-factor(colData$genotype,levels=c("MM","LNK2","EID1","LE"))
+genotype.out <- binarizeCategoricalColumns(colData$genotype,minCount=1) #includeLevelvsAll=TRUE --> compare one levels as reference vs others
+
+#Combine trait data
+#traits<-cbind(traits,photoperiod.out)
+#traits<-cbind(photoperiod.out,genotype.out)
+traits<-photoperiod.out
+#traits<-genotype.out
+rownames(traits)<-rownames(colData)
+# Define number of genes and sample
+nSamples<-nrow(norm.counts)
+nGenes<-ncol(norm.counts)
+
+#Calculate correlation between eigengenes and traits
+module.trait.corr<-cor(module_eigengenes,traits,use='p')
+
+#Calculate pvalues for those correlations
+module.trait.crr.pvals <-corPvalueStudent(module.trait.corr,nSamples)
+
+#Visualize module-trait association as heatmap
+heatmap.data<-merge(module_eigengenes,traits,by='row.names')
+heatmap.data<-heatmap.data%>%column_to_rownames(var="Row.names")
+names(heatmap.data)
+pdf("heatmap_eigengenes.pdf")
+CorLevelPlot(heatmap.data,
+             x=names(heatmap.data[23:24]), #traits
+             y=names(heatmap.data[1:22]), #rest
+             col=c("red","pink","white","skyblue","blue")) #eigengenes names
+dev.off()
+
+
+#Obtain significant genes associated in modules
+module.gene.mapping<-as.data.frame(bwnet$colors)
+module.gene.mapping %>% filter(`bwnet$colors`=='lightyellow') %>% #Select color according to significance of the module
+  rownames()                                                      # grey means not associated to any module
+
+#7. Intramodule analysis: Identifying driver genes -----------------------
+#This quantifies the similarity of all genes on the array to every module.
+module.membership.measure<-cor(module_eigengenes,norm.counts,use='p')
+module.membership.measure.pvals<-corPvalueStudent(module.membership.measure,nSamples)
+
+#Calculate the gene significance and associated p-values
+#It returns genes significantly associated with LD 
+gene.signf.corr<-cor(norm.counts,traits$data.LD.vs.all,use='p')
+gene.signf.corr.pvals<-corPvalueStudent(gene.signf.corr,nSamples)
+
+gene.signf.corr.pvals %>% as.data.frame() %>% arrange(V1) %>% filter(V1<0.01) %>% unlist() %>% unname() %>% length()
+
+#It returns genes significantly associated with SD 
+gene.signf.corr<-cor(norm.counts,traits$data.SD.vs.all,use='p')
+gene.signf.corr.pvals<-corPvalueStudent(gene.signf.corr,nSamples)
+gene.signf.corr.pvals %>% as.data.frame() %>% arrange(V1) %>% filter(V1<0.01) %>% unlist() %>% unname() %>% length()
 
 
 
