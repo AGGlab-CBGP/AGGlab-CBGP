@@ -276,12 +276,23 @@ module.membership.measure.pvals<-corPvalueStudent(module.membership.measure,nSam
 gene.signf.corr<-cor(norm.counts,traits$data.LD.vs.all,use='p')
 gene.signf.corr.pvals<-corPvalueStudent(gene.signf.corr,nSamples)
 
-gene.signf.corr.pvals %>% as.data.frame() %>% arrange(V1) %>% filter(V1<0.01) %>% unlist() %>% unname() %>% length()
+LD_genes<- gene.signf.corr.pvals %>% 
+  as.data.frame() %>% 
+  arrange(V1) %>% 
+  filter(V1<0.01) %>% rownames()
+write.table(LD_genes, file = "significant_LD_genes.txt", row.names = FALSE)
 
 #It returns genes significantly associated with SD 
 gene.signf.corr<-cor(norm.counts,traits$data.SD.vs.all,use='p')
 gene.signf.corr.pvals<-corPvalueStudent(gene.signf.corr,nSamples)
-gene.signf.corr.pvals %>% as.data.frame() %>% arrange(V1) %>% filter(V1<0.01) %>% unlist() %>% unname() %>% length()
+
+SD_genes<- gene.signf.corr.pvals %>% 
+  as.data.frame() %>% 
+  arrange(V1) %>% 
+  filter(V1<0.01) %>% rownames()
+write.table(SD_genes, file = "significant_SD_genes.txt", row.names = FALSE)
+
+
 
 
 
