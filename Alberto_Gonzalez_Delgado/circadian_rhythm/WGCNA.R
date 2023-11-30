@@ -26,6 +26,7 @@ genotypes<-c(rep("EID1",24),rep("LE",24),rep("LNK2",24),rep("MM",24))
 genotypes<-c(rep(genotypes,3))
 photoperiods<-c(rep("LD",96),rep("ND",96),rep("SD",96))
 time<-rep(seq(1, 23, by = 2), each = 2, times = 12)
+replicates<-rep("r1","r2",144)
 
 phenoData<-data.frame(samples=titles,genotype=genotypes,photoperiod=photoperiods,replicate=replicates)
 
