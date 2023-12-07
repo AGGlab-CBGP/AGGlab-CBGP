@@ -54,8 +54,44 @@ head(data)
 genotypes<-unique(phenoData[,2])
 photoperiods<-unique(phenoData[,3])
 
+#4. Exploratory data analysis -------------------------------------------------------
 
-#4. Normalization --------------------------------------------------------------------
+# Hierarchical clustering 
+htree<-hclust(dist(t(data)),method='average') #Data has to be transposed (genes as columns, samples as rows)
+pdf("hierarchical_clustering.pdf",width=15,height=8)
+plot(htree,cex=0.4)  
+dev.off()
+
+#PCA
+
+pca<- prcomp(t(data)) #Data has to be transposed (genes as columns, samples as rows)
+pca.data<-pca$x #Data about principal components are in x
+pca.var<-pca$sdev^2 #Standard variation
+pca.var.percent<-round(pca.var/sum(pca.var)*100,digits=2) #Percentage of variance explained
+pca.data<-as.data.frame(pca.data)
+###Plot 2D PCA
+pdf("PCA_samples.pdf",width=10,height=10)
+ggplot(pca.data,aes(PC1,PC2))+
+  geom_point()+
+  geom_text(label=rownames(pca.data),size=1.25)+
+  labs(x=paste0('PC1:',pca.var.percent[1],'%'),
+       y=paste0('PC2:',pca.var.percent[2],'%'))
+dev.off()
+
+### Plot 3D PCA
+x <- pca.data$PC1
+y <- pca.data$PC2
+z <- pca.data$PC3
+plot3d(x, y, z, col="red", size=3, 
+       xlab = paste0('PC1: ', pca.var.percent[1], '%'), 
+       ylab = paste0('PC2: ', pca.var.percent[2], '%'), 
+       zlab = paste0('PC3: ', pca.var.percent[3], '%'))
+text3d(x, y, z, texts=rownames(pca.data), adj=c(0.5,0.5), color="black", cex=0.6)
+text3d(x, y, z, texts=rownames(pca.data), adj=c(0.5,0.5), color="black", cex=0.6)
+rgl.postscript("3D_PCA.pdf", fmt = "pdf")
+
+
+#5. Normalization --------------------------------------------------------------------
 #Generate DESeq2 dataset
 
 #Filter samples excluded 
@@ -65,14 +101,16 @@ photoperiods<-unique(phenoData[,3])
 
 #rownames and column names identical
 colData<-phenoData
-rownames(colData)<-colData$Sample
+ 
+dev.off()rownames(colData)<-colData$Sample
 all(rownames(colData) %in% colnames(data)) #Are all the conditions? #(data.subset)
 all(rownames(colData) == colnames(data)) #They must to be in the same order
 
 # Create dds
 dds <- DESeqDataSetFromMatrix(countData = data,
                               colData=colData,
-                              design = ~1) # Not specifying model because we need  #the deseq data set to performe variance stabilizing transformation
+                              design = ~1) # Not specifying model because we need  
+                                           #the deseq data set to performe variance stabilizing transformation
 
 # Remove all genes with counts >=15 in more than 75% of samples (# samples: 288)
 #Suggested by WGCNA on RNAseq FAQ
@@ -102,7 +140,8 @@ norm.counts <- norm.counts %>%
   select(-c(gene_id))
 
 
-#5. Perform network construction, module eigengene calculation, module-trait correlation --------------------
+#6. Perform network construction, module eigengene calculation, module-trait correlation --------------------
+
 
 #Choose a set of soft-thresholding powers
 power<-c(c(1:10),seq(12,50,by=2))
@@ -139,7 +178,7 @@ networks = constructNetworks(norm.counts, phenoData, genotypes, photoperiods,
                              mergeCutHeight = 0.10, numericLabels = TRUE,
                              pamRespectsDendro = FALSE, verbose=3)
 
-#6. Compare modules by overlap across conditions
+#7. Compare modules by overlap across conditions
 pdf("multiWGCNA_results.pdf")
 results=list()
 results$overlaps=iterate(networks, overlapComparisons, plot=TRUE)
@@ -148,5 +187,5 @@ dev.off()
 #Visualize matches
 head(results$overlaps$LD_vs_SD$bestMatches)
 
-#7. Perform differential module expression analysis
+#8. Perform differential module expression analysis
 
