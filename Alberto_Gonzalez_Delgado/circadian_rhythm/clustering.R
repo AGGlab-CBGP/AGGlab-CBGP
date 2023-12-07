@@ -133,7 +133,7 @@ norm.counts<-as.data.frame(assay(dds_norm))
 #n<-288*0.75
 #dds75<-dds[rowSums(counts(dds)>=15)>=n,]
 #nrow(dds75) #5765 genes
-norm.counts<-as.data.frame(norm.counts)
+
 norm.counts <- norm.counts %>%
   mutate(gene_id=rownames(norm.counts)) %>%
   filter(gene_id %in% gene_list) %>%
