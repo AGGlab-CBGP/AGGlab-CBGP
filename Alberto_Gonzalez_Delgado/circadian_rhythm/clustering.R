@@ -7,8 +7,8 @@
 
 BiocManager::install("multiWGCNA")
 #library(muliWGCNA)
-setwd("C:/Users/admin/Desktop/projects")
-
+#setwd("C:/Users/admin/Desktop/projects") #Home-desktop
+setwd("D:/Alberto/projects") #Lab-desktop
 
 #!/bin/R
 #https://bioconductor.org/packages/devel/bioc/vignettes/multiWGCNA/inst/doc/autism_full_workflow.html
@@ -19,6 +19,8 @@ library(multiWGCNA)
 library(dplyr)
 library(DESeq2)
 library(gridExtra)
+library(plotmics)
+set.seed(123)
 ###################################################################################################
 
 #  The multiWGCNA R package is a WGCNA-based procedure designed for RNA-seq datasets with two     #
@@ -28,7 +30,7 @@ library(gridExtra)
 
 #1. Read data
 data<-read.delim("documents/02.1.raw_counts.tsv")
-oscill_data<-read.delim('oscillation_descriptors.tsv')
+oscill_data<-read.delim('../oscillation_descriptors.tsv')
 gene_list<-oscill_data$CycID
 head(data)
 
@@ -89,6 +91,7 @@ plot3d(x, y, z, col="red", size=3,
 text3d(x, y, z, texts=rownames(pca.data), adj=c(0.5,0.5), color="black", cex=0.6)
 text3d(x, y, z, texts=rownames(pca.data), adj=c(0.5,0.5), color="black", cex=0.6)
 rgl.postscript("3D_PCA.pdf", fmt = "pdf")
+htmlwidgets::saveWidget(rgl::rglwidget(), "3D_PCA.html")
 
 
 #5. Normalization --------------------------------------------------------------------
@@ -101,8 +104,8 @@ rgl.postscript("3D_PCA.pdf", fmt = "pdf")
 
 #rownames and column names identical
 colData<-phenoData
- 
-dev.off()rownames(colData)<-colData$Sample
+
+rownames(colData)<-colData$Sample
 all(rownames(colData) %in% colnames(data)) #Are all the conditions? #(data.subset)
 all(rownames(colData) == colnames(data)) #They must to be in the same order
 
@@ -121,27 +124,12 @@ dds <- DESeqDataSetFromMatrix(countData = data,
 #nrow(dds75) #5765 genes
 
 #Perform variance stabilization
-#dds_norm<-vst(dds75)
-dds_norm<-vst(dds)
+dds_data<-dds[rownames(dds) %in% gene_list,]
+dds_norm<-vst(dds_data)
 #Get normalized counts (samples as rows and genes as columns)
 norm.counts<-as.data.frame(assay(dds_norm))
 
-# Remove all genes with counts >=15 in more than 75% of samples (# samples: 288)
-#Suggested by WGCNA on RNAseq FAQ
-# I skipped this part because we filtered by all the genes we want to analyse
-
-#n<-288*0.75
-#dds75<-dds[rowSums(counts(dds)>=15)>=n,]
-#nrow(dds75) #5765 genes
-
-norm.counts <- norm.counts %>%
-  mutate(gene_id=rownames(norm.counts)) %>%
-  filter(gene_id %in% gene_list) %>%
-  select(-c(gene_id))
-
-
 #6. Perform network construction, module eigengene calculation, module-trait correlation --------------------
-
 
 #Choose a set of soft-thresholding powers
 power<-c(c(1:10),seq(12,50,by=2))
@@ -168,7 +156,7 @@ p2<-ggplot(sft.data,aes(Power,mean.k., label=Power))+
   theme_gray()
 
 grid.arrange(p1,p2,ncol=1) #Normally select higher than R2 0.8
-#and low mean connectivity
+                           #and low mean connectivity
 
 class(data)
 networks = constructNetworks(norm.counts, phenoData, genotypes, photoperiods,
@@ -188,4 +176,100 @@ dev.off()
 head(results$overlaps$LD_vs_SD$bestMatches)
 
 #8. Perform differential module expression analysis
+results$diffModExp = runDME(networks[["combined"]], 
+                            colData, 
+                            p.adjust="fdr", 
+                            refCondition="genotype", 
+                            testCondition="photoperiod",
+                            write=FALSE,
+                            plot=FALSE)
+
+test="ANOVA"
+mode="PC1"
+testCondition="photoperiod"
+refCondition="genotype"
+datExpr<-networks[["combined"]]@datExpr
+modules <- sort(unique(datExpr$dynamicLabels))
+modulePrefix <- name(networks[["combined"]])
+pval.dfs = list()
+pdf("Differential_expression_module_analysis.pdf",width=15)
+for (module in modules) {
+  moduleGenes = datExpr$X[datExpr$dynamicLabels == module]
+  cleanDatExpr = t(cleanDatExpr(datExpr))
+  subset = cleanDatExpr[rownames(cleanDatExpr) %in% moduleGenes,]
+  if(mode=="Zscore"){
+  #Zscore
+  mean = rowMeans(subset)
+  stdev = apply(subset, 1, sd)
+  zscoreMatrix = (subset - mean)/stdev
+  zscoreMatrix = na.omit(zscoreMatrix)
+  averageExpression = apply(zscoreMatrix, 2, mean)
+  moduleExpression = data.frame(Sample = names(averageExpression), 
+                                moduleExpression = averageExpression)
+  }
+  if (mode == "PC1") {
+    PC1 = moduleEigengenes(t(subset), colors = rep("Module", 
+                                                   length(moduleGenes)), nPC = 1)$eigengenes
+    parts <- strsplit(rownames(PC1), "_")
+    samples <- sapply(parts, function(x) paste(toupper(c(x[1], x[4],x[3])), collapse = "_"))
+    moduleExpression = data.frame(Sample = rownames(PC1), 
+                                  moduleExpression = PC1)
+    colnames(moduleExpression) = c("Sample", "moduleExpression")
+  }
+  mergedData = cbind(moduleExpression, colData[match(moduleExpression$Sample, 
+                                                     colData$Sample), -1])
+  mergedData = mergedData %>% arrange(eval(parse(text = testCondition)), 
+                                      eval(parse(text = refCondition)))
+  bargraph <- ggplot(data = mergedData, aes(x = factor(Sample, levels = Sample), y = moduleExpression)) + 
+    ylab(mode) + 
+    geom_bar(aes(fill = moduleExpression), stat = "identity", color = "black", position = position_dodge(9)) + 
+    scale_fill_gradient2(name = mode, low = "blue", mid = "white", high = "red", midpoint = 0) + 
+    scale_x_discrete(labels = tolower(paste0(substr(mergedData[,3], 0, 3), "_", substr(mergedData[, 4], 0, 3)))) + 
+    theme(axis.ticks.x = element_blank(), axis.text.x = element_text(size = 6,angle=90)) +
+    labs(title=paste0(module))+
+    facet_wrap(~genotype)  
+
+if (test == "ANOVA") {
+    pval.df <- performANOVA(moduleExpression, colData, testCondition, 
+                            refCondition)
+  }
+  if (test == "PERMANOVA") {
+    requireNamespace("vegan", quietly = TRUE)
+    permanova = vegan::adonis(t(subset) ~ colData[[testCondition]] + 
+                                colData[[refCondition]] + colData[[testCondition]] * 
+                                colData[[refCondition]], method = "euclidean", permutations = 9999)
+    Factors = c(testCondition, refCondition, paste0(testCondition, 
+                                                    "*", refCondition))
+    p.value = c(permanova$aov.tab$`Pr(>F)`[1:3])
+    pval.df = data.frame(Factors, p.value)
+  }
+  boxplot <- ggplot(data = mergedData, aes(x = eval(parse(text = refCondition)), 
+                                           y = moduleExpression, color = eval(parse(text = testCondition)))) + 
+    labs(title = paste0(module," p: ", paste(pval.df$Factors, signif(pval.df$p.value, 
+                                                             2), sep = "=", collapse = ", ")), y = "Expression", 
+         x = refCondition) + geom_boxplot(width = 1/length(unique(mergedData[, 
+                                                                             refCondition]))) + scale_color_manual(values = c("red","black" ,
+                                                                                                                              "blue")) + guides(color = guide_legend(title = testCondition)) + 
+    theme(panel.background = element_blank(), axis.line = element_line(colour = "black"), 
+          panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          plot.title = element_text(hjust = 0.5))
+  
+ 
+  print(boxplot)
+  print(bargraph)
+
+  
+}
+dev.off()
+
+#9 Perform the module preservation analysis
+enableWGCNAThreads()
+
+results$preservation=iterate(networks[photoperiods], 
+                             preservationComparisons, 
+                             write=FALSE, 
+                             plot=TRUE, 
+                             nPermutations=10)
+
+
 
