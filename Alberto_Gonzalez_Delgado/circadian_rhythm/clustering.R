@@ -5,7 +5,7 @@
 #Centro de Biotecnologia y Genomica de Plantas (UPM-INIA/CSIC)
 
 
-BiocManager::install("multiWGCNA")
+#BiocManager::install("multiWGCNA")
 #library(muliWGCNA)
 #setwd("C:/Users/admin/Desktop/projects") #Home-desktop
 setwd("D:/Alberto/projects") #Lab-desktop
@@ -20,6 +20,9 @@ library(dplyr)
 library(DESeq2)
 library(gridExtra)
 library(plotmics)
+library(tidyr)
+library(ggplot2)
+library(stringr)
 set.seed(123)
 ###################################################################################################
 
@@ -160,7 +163,7 @@ grid.arrange(p1,p2,ncol=1) #Normally select higher than R2 0.8
 
 class(data)
 networks = constructNetworks(norm.counts, phenoData, genotypes, photoperiods,
-                             networkType = "signed", power = 12,
+                             networkType = "signed", power = 10,
                              minModuleSize = 40, maxBlockSize = 25000,
                              reassignThreshold = 0, minKMEtoStay = 0.7,
                              mergeCutHeight = 0.10, numericLabels = TRUE,
@@ -192,7 +195,7 @@ datExpr<-networks[["combined"]]@datExpr
 modules <- sort(unique(datExpr$dynamicLabels))
 modulePrefix <- name(networks[["combined"]])
 pval.dfs = list()
-pdf("Differential_expression_module_analysis.pdf",width=15)
+pdf("../differential_expression_module_analysis.pdf",width=15)
 for (module in modules) {
   moduleGenes = datExpr$X[datExpr$dynamicLabels == module]
   cleanDatExpr = t(cleanDatExpr(datExpr))
@@ -269,7 +272,42 @@ results$preservation=iterate(networks[photoperiods],
                              preservationComparisons, 
                              write=FALSE, 
                              plot=TRUE, 
-                             nPermutations=10)
+                             nPermutations=100)
+ 
+#10. Print Results summarized
+summarizeResults(networks, results)
 
 
+#11. Analysis of modules
+colors <- c("LD" = "blue", "SD" = "red", "ND" = "black")
+modules<-rownames(networks[["EID1"]]@moduleEigengenes)
+pdf("EID1_modules_phase_distribution.pdf")
+for (module in modules){
+  gene_list<-topNGenes(networks[["EID1"]],module)
+  print(length(gene_list))
+  filtered_data<- oscill_data %>% filter(CycID %in% gene_list) %>% select(matches(".*phase"))
+  column_names <- colnames(filtered_data)
+  new_column_names <- sapply(column_names, function(x) strsplit(x, "\\.")[[1]][1])
+  genotypes<-sapply(new_column_names, function(x) strsplit(x, "_")[[1]][1])
+  photoperiods<-sapply(new_column_names, function(x) strsplit(x, "_")[[1]][2])
+  long_data<-pivot_longer(filtered_data, everything(), names_to = "condition", values_to = "value")
+  long_data <- long_data %>%
+    mutate(genotype = str_extract(condition, "^[^_]*"),
+           photoperiod = str_extract(condition, "(?<=_)[^_]*"))
+  long_data$photoperiod <- sapply(long_data$photoperiod, function(x) strsplit(x, "\\.")[[1]][1])
+  p<-ggplot(long_data, aes(x = genotype, y = value, fill = photoperiod)) +
+    geom_boxplot() +
+    facet_wrap(~ genotype) +
+    scale_fill_manual(values = colors) +
+    ylim(0, 24) + 
+    theme_minimal() +
+    labs(title = paste0(module," phases distribution"), x = "Genotype", y = "Value", fill = "Photoperiod")
+  print(p)
+}
+dev.off()
 
+
+data_exp<-networks[["EID1"]]@datExpr
+length(rownames(data_exp))
+data_exp$X
+length(data_exp$dynamicLabels)
