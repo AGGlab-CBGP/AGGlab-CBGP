@@ -9,9 +9,11 @@
 Script for finding orthologs using reciprocal BLAST hits.
 
 Sript usage is as follows:
-    ./find_orthologs.py -i1 <Input file 1> -i2 <Input file 2> -o <Output file name> –t <Sequence type – n/p>
+    ./find_orthologs.py -i1 <Input file 1> -i2 <Input file 2> -o <Output file name> –t <Sequence type – n/p> -c <Number targets sequences> -s <Number of High-scoring Segment pair>
 
-where "n" specifies a nucleotide sequence and "p" specifies a protein sequence.
+-t: where "n" specifies a nucleotide sequence and "p" specifies a protein sequence.
+-c: it is recommended at least 5 sequences
+
 '''
 import argparse
 import subprocess
