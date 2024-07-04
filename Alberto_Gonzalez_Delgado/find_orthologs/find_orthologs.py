@@ -131,8 +131,7 @@ def main():
 
     '''
     output_list is a list of reciprocal BLAST hits. Each element is a tab
-    separated pair of gene names. Eg:
-    ["lcl|AM421808.1_cds_CAM09336.1_10	lcl|AE002098.2_cds_NMB0033_33", "lcl|AM421808.1_cds_CAM09337.1_11	lcl|AE002098.2_cds_NMB0034_34", "lcl|AM421808.1_cds_CAM09338.1_12	lcl|AE002098.2_cds_NMB0035_35", "lcl|AM421808.1_cds_CAM09339.1_13	lcl|AE002098.2_cds_NMB0036_36", ...]
+    separated pair of gene names. 
     '''
 
     make_dir = "mkdir tmp"
