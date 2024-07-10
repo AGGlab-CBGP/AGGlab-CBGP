@@ -4,7 +4,7 @@
 Script for finding orthologs using reciprocal BLAST hits.
 
 Sript usage is as follows:
-    ./find_orthologs.py -i1 <Input file 1> -i2 <Input file 2> -o <Output file name> –t <Sequence type – n/p> -c <Number of target sequences> -s <Number of high-scoring segment pairs> -org1 <Organism code 1> -org2 <Organism code 2>
+    ./find_orthologs.py -i1 <Input file 1> -i2 <Input file 2> -o <Output file name> –t <Sequence type – n/p> -c <Number of target sequences> -s <Number of high-scoring segment pairs> -org1 <Organism code 1> -org2 <Organism code 2> -keep <Boolean: Keep the temporary files> 
 
 where "n" specifies a nucleotide sequence and "p" specifies a protein sequence.
 '''
@@ -108,9 +108,11 @@ def main():
     parser.add_argument("-s", help = "max number of High-scoring Segment pair.")
     parser.add_argument("-org1", help = "Organism code for input 1")
     parser.add_argument("-org2", help = "Organism code for input 2")
+    parser.add_argument("-keep", help = "Keep the temporary files", action='store_true')
     args = parser.parse_args()
 
-    file_one = args.i1             #Populating the variables
+    
+    file_one = args.i1             
     file_two = args.i2
     output_file = args.o
     input_sequence_type = args.t
@@ -118,7 +120,7 @@ def main():
     max_hsps = args.s
     org_code1 = args.org1
     org_code2 = args.org2
-    # Subprocess code
+    keep=args.keep
 
     '''
     output_list is a list of reciprocal BLAST hits. Each element is a tab
@@ -133,16 +135,17 @@ def main():
     subprocess.call(make_file_1.split())
     subprocess.call(make_file_2.split())
 
-    output_list = get_reciprocal_hits(file_one, file_two, output_file, input_sequence_type, target_seqs, max_hsps, org_code1, org_code2)
+    output_list = get_reciprocal_hits(file_one, file_two, output_file, input_sequence_type, target_seqs, max_hsps, org_code1, org_code2,keep)
     print(output_list)
     with open(output_file, 'w') as output_fh:
         for ortholog_pair in output_list:
             output_fh.write(ortholog_pair)
+    if keep:
+        copy_file_1='cp tmp/output_file_1 ./blast_output_1.tsv'
+        copy_file_2='cp tmp/output_file_2 ./blast_output_2.tsv'
+        subprocess.call(copy_file_1.split())
+        subprocess.call(copy_file_2.split())
 
-    copy_file_1='cp tmp/output_file_1 ./blast_output_1.tsv'
-    copy_file_2='cp tmp/output_file_2 ./blast_output_2.tsv'
-    subprocess.call(copy_file_1.split())
-    subprocess.call(copy_file_2.split())
     remove_dir = "rm -rf tmp"
     subprocess.call(remove_dir.split())
 
