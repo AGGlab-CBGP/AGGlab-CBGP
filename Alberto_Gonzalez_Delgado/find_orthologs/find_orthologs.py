@@ -11,7 +11,7 @@ where "n" specifies a nucleotide sequence and "p" specifies a protein sequence.
 import argparse
 import subprocess
 
-def get_reciprocal_hits(file_one,file_two, output_file,input_sequence_type,target_seqs,max_hsps,org_code1,org_code2):
+def get_reciprocal_hits(file_one,file_two, output_file,input_sequence_type,target_seqs,max_hsps,org_code1,org_code2,keep):
 
     a = []                  #List a stores the first index headers (db values)
     a1 = []                 #List a1 stores the second index headers (query headers)
@@ -111,7 +111,7 @@ def main():
     parser.add_argument("-keep", help = "Keep the temporary files", action='store_true')
     args = parser.parse_args()
 
-    
+
     file_one = args.i1             
     file_two = args.i2
     output_file = args.o
